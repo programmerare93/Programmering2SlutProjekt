@@ -15,6 +15,7 @@ server.listen(port, () => {
   console.log("Server öppnad på port " + port);
 });
 
+// TODO: Flytta Circle till annan fil
 class Circle {
   constructor(xPos, yPos, radius, color) {
     this.id = crypto.randomUUID();
@@ -26,31 +27,16 @@ class Circle {
 }
 
 let gameState = {
-  circles: Array,
-  socketCircle: Map
+  circles: Map
 };
-gameState.circles = new Array;
-gameState.socketCircle = new Map;
+gameState.circles = new Map;
 
 function removeCircle(circles, circleToRemove) {
-  let circleIndex = 0;
-  for (; circleIndex < circles.length; ++circleIndex) {
-    if (circles[circleIndex].id == circleToRemove.id) {
-      break;
-    }
-  }
-
-  if (circleIndex < circles.length) {
-    circles.splice(circleIndex, 1);
-  }
+  circles.delete(circleToRemove.id);
 }
 
 function updateGameState(gameState, newCircle) {
-  gameState.circles.forEach((circle, index) => {
-    if (circle.id === newCircle.id) {
-      gameState.circles[index] = newCircle;
-    }
-  });
+  gameState.circles.set(newCircle.id, newCircle);
 }
 
 function addRandomCircle(gameState) {
@@ -68,13 +54,12 @@ io.on("connection", (socket) => {
 
   socket.on("player-connected", (data) => {
     socket.emit("welcome", gameState);
-    gameState.circles.push(data.circle)
-    gameState.socketCircle.set(socket.id, data.circle);
-    socket.broadcast.emit("another-player-connected", data);
+    gameState.circles.set(data.circle.id, data.circle);
+    socket.broadcast.emit("another-player-connected", {circle: data.circle});
   });
 
   socket.on("disconnect", () => {
-    let circle = gameState.socketCircle.get(socket.id);
+    let circle = gameState.circles.get(socket.id);
     removeCircle(gameState.circles, circle);
     socket.broadcast.emit("another-player-disconnected", {circle: circle});
   });

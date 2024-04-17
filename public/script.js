@@ -3,6 +3,10 @@ const socket = io();
 const canvas = document.getElementById("GameArea");
 const canvasContext = canvas.getContext("2d");
 
+const movementSpeed = 1.25;
+
+const mapSize = (14142, 14142); // Samma storlek som i agario
+
 class Circle {
   constructor(xPos, yPos, radius, color) {
     this.id = crypto.randomUUID();
@@ -10,10 +14,12 @@ class Circle {
     this.y = yPos;
     this.radius = radius;
     this.color = color;
-    // TODO: Flytta speed från circle till spelar classen
-    this.speed = 1.25;
   }
 }
+
+/*class Player {
+  constructor(circle)
+}*/
 
 function generateRandomColor() {
   return "#" + Math.floor(Math.random() * 16777215).toString(16);
@@ -21,7 +27,7 @@ function generateRandomColor() {
 
 function drawCircles(circles, canvasContext) {
   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-  for (const circle of circles) {
+  for (const circle of circles.values()) {
     canvasContext.beginPath();
     canvasContext.arc(
       circle.x - circle.radius,
@@ -84,43 +90,22 @@ class Vector2D {
 }
 
 function addCircle(circles, newCircle) {
-  //const circleIndex = circles.indexOf(newCircle);
-  let circleIndex = 0;
-  for (; circleIndex < circles.length; ++circleIndex) {
-    if (circles[circleIndex].id == newCircle.id) {
-      break;
-    }
-  }
-
-  if (circleIndex < circles.length) {
-    circles[circleIndex] = newCircle;
-  } else {
-    circles.push(newCircle);
-  }
+  circles.set(newCircle.id, newCircle);
 }
 
 function removeCircle(circles, circleToRemove) {
-  let circleIndex = 0;
-  for (; circleIndex < circles.length; ++circleIndex) {
-    if (circles[circleIndex].id == circleToRemove.id) {
-      break;
-    }
-  }
-
-  if (circleIndex < circles.length) {
-    circles.splice(circleIndex, 1);
-  }
+  circles.delete(circleToRemove.id);
 }
 
 function addCircles(circles, newCircles) {
-  for (const newCircle of newCircles) {
-    addCircle(circles, newCircle);
-  }
+  circles.forEach((value) => {
+    addCircle(circles, value);
+  });
 }
 
 function main() {
-  let circles = [new Circle(20, 20, 10, generateRandomColor())];
-  let playerCircle = circles[0];
+  let playerCircle = new Circle(20, 20, 10, generateRandomColor());
+  let circles = new Map([[playerCircle.id, playerCircle]]);
 
   // TODO: Flytta all socket setup till egen funktion/helper
   socket.on("another-player-moved", (data) => {
@@ -175,8 +160,8 @@ function main() {
     }
 
     if (movementDirection != undefined) {
-      playerCircle.x += movementDirection.x * playerCircle.speed;
-      playerCircle.y += movementDirection.y * playerCircle.speed;
+      playerCircle.x += movementDirection.x * movementSpeed;
+      playerCircle.y += movementDirection.y * movementSpeed;
 
       socket.emit("player-moved", { circle: playerCircle });
     }
