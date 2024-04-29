@@ -1,32 +1,29 @@
 "use strict";
+
 const socket = io();
-const canvas = document.getElementById("GameArea");
+let canvas = document.getElementById("GameArea");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
 const canvasContext = canvas.getContext("2d");
 
 const movementSpeed = 1.25;
+const movementThreshold = 0.4;
 
-const mapSize = (14142, 14142); // Samma storlek som i agario
+const mapSize = { width: 14142, height: 14142 }; // Samma storlek som i agario
 
-class Circle {
-  constructor(xPos, yPos, radius, color) {
-    this.id = crypto.randomUUID();
-    this.x = xPos;
-    this.y = yPos;
-    this.radius = radius;
-    this.color = color;
-  }
-}
-
-/*class Player {
-  constructor(circle)
-}*/
-
-function generateRandomColor() {
-  return "#" + Math.floor(Math.random() * 16777215).toString(16);
-}
+let playerId = undefined;
 
 function drawCircles(circles, canvasContext) {
+  const playerCircle = circles.get(playerId);
+
   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+  canvasContext.save();
+  canvasContext.translate(
+    playerCircle.x - canvas.width,
+    playerCircle.y - canvas.height
+  );
+
   for (const circle of circles.values()) {
     canvasContext.beginPath();
     canvasContext.arc(
@@ -40,6 +37,7 @@ function drawCircles(circles, canvasContext) {
     canvasContext.fill();
     canvasContext.stroke();
   }
+  canvasContext.restore();
 }
 
 class Vector2D {
@@ -103,35 +101,13 @@ function addCircles(circles, newCircles) {
   });
 }
 
-function main() {
-  let playerCircle = new Circle(20, 20, 10, generateRandomColor());
-  let circles = new Map([[playerCircle.id, playerCircle]]);
+socket.on("welcome", (data) => {
+  let playerCircle = data.playerCircle;
+  playerCircle.camer = new Camera(playerCircle.x, playerCircle.y);
+  let circles = new Map(JSON.parse(data.circles));
+  playerId = playerCircle.id;
 
-  // TODO: Flytta all socket setup till egen funktion/helper
-  socket.on("another-player-moved", (data) => {
-    addCircle(circles, data.circle);
-    drawCircles(circles, canvasContext);
-  });
-
-  socket.on("another-player-connected", (data) => {
-    addCircle(circles, data.circle);
-    drawCircles(circles, canvasContext);
-  });
-
-  socket.on("another-player-disconnected", (data) => {
-    removeCircle(circles, data.circle);
-    drawCircles(circles, canvasContext);
-  });
-
-  socket.on("connect", () => {
-    socket.emit("player-connected", { circle: playerCircle });
-  });
-
-  socket.on("welcome", (gameState) => {
-    addCircles(circles, gameState.circles);
-    drawCircles(circles, canvasContext);
-  });
-
+  // TODO: Bättre namn/eventuellt struktur
   let newXPosition = playerCircle.x;
   let newYPosition = playerCircle.y;
 
@@ -148,8 +124,8 @@ function main() {
   const gameLoop = () => {
     if (
       // TODO: Inga magisk nummer
-      Math.abs(newXPosition - playerCircle.x) > 0.4 &&
-      Math.abs(newYPosition - playerCircle.y) > 0.4
+      Math.abs(newXPosition - playerCircle.x) > movementThreshold &&
+      Math.abs(newYPosition - playerCircle.y) > movementThreshold
     ) {
       movementDirection = new Vector2D(
         newXPosition - playerCircle.x,
@@ -166,12 +142,28 @@ function main() {
       socket.emit("player-moved", { circle: playerCircle });
     }
 
+    addCircle(circles, playerCircle);
     drawCircles(circles, canvasContext);
 
     window.requestAnimationFrame(gameLoop);
   };
 
-  window.requestAnimationFrame(gameLoop);
-}
+  // TODO: Flytta all socket setup till egen funktion/helper
+  socket.on("another-player-moved", (data) => {
+    addCircle(circles, data.circle);
+    drawCircles(circles, canvasContext);
+  });
 
-main();
+  socket.on("another-player-connected", (data) => {
+    addCircle(circles, data.newCircle);
+    drawCircles(circles, canvasContext);
+  });
+
+  socket.on("another-player-disconnected", (data) => {
+    removeCircle(circles, data.circle);
+    drawCircles(circles, canvasContext);
+  });
+
+  drawCircles(circles, canvasContext);
+  window.requestAnimationFrame(gameLoop);
+});
