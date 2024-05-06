@@ -15,29 +15,24 @@ const mapSize = { width: 14142, height: 14142 }; // Samma storlek som i agario
 let playerId = undefined;
 
 function drawCircles(circles, canvasContext) {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
   const playerCircle = circles.get(playerId);
+  const cameraX = - playerCircle.x + canvas.width / 2;
+  const cameraY = - playerCircle.y + canvas.height / 2;
 
+  canvasContext.setTransform(1, 0, 0, 1, 0, 0); // Identitetsmatrisen
   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-  canvasContext.save();
-  canvasContext.translate(
-    playerCircle.x - canvas.width,
-    playerCircle.y - canvas.height
-  );
+  canvasContext.translate(cameraX, cameraY);
 
-  for (const circle of circles.values()) {
+  circles.forEach((circle) => {
     canvasContext.beginPath();
-    canvasContext.arc(
-      circle.x - circle.radius,
-      circle.y - circle.radius,
-      circle.radius,
-      0,
-      2 * Math.PI
-    );
     canvasContext.fillStyle = circle.color;
+    canvasContext.arc(circle.x, circle.y, circle.radius, 0, 2 * Math.PI);
     canvasContext.fill();
     canvasContext.stroke();
-  }
-  canvasContext.restore();
+  });
 }
 
 class Vector2D {
@@ -103,7 +98,6 @@ function addCircles(circles, newCircles) {
 
 socket.on("welcome", (data) => {
   let playerCircle = data.playerCircle;
-  playerCircle.camer = new Camera(playerCircle.x, playerCircle.y);
   let circles = new Map(JSON.parse(data.circles));
   playerId = playerCircle.id;
 
@@ -111,26 +105,21 @@ socket.on("welcome", (data) => {
   let newXPosition = playerCircle.x;
   let newYPosition = playerCircle.y;
 
-  let movementDirection = new Vector2D(
-    newXPosition - playerCircle.x,
-    newYPosition - playerCircle.y
-  ).normalize();
+  let movementDirection = new Vector2D(0, 0);
 
-  document.onmousemove = (event) => {
+  document.addEventListener("mousemove", (event) => {
     newXPosition = event.clientX;
     newYPosition = event.clientY;
-  };
+  });
 
   const gameLoop = () => {
+    const deltaX = newXPosition - playerCircle.x;
+    const deltaY = newYPosition - playerCircle.y;
     if (
-      // TODO: Inga magisk nummer
-      Math.abs(newXPosition - playerCircle.x) > movementThreshold &&
-      Math.abs(newYPosition - playerCircle.y) > movementThreshold
+      Math.abs(deltaX) > movementThreshold &&
+      Math.abs(deltaY) > movementThreshold
     ) {
-      movementDirection = new Vector2D(
-        newXPosition - playerCircle.x,
-        newYPosition - playerCircle.y
-      ).normalize();
+      movementDirection = new Vector2D(deltaX, deltaY).normalize();
     } else {
       movementDirection = undefined;
     }

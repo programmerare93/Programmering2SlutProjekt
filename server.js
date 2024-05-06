@@ -61,8 +61,8 @@ io.on("connection", (socket) => {
   }*/
 
   const playerCircle = new Circle(
-    20,
-    20,
+    2000,
+    2000,
     10,
     generateRandomColor(),
     crypto.randomUUID()
