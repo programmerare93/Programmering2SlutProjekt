@@ -1,3 +1,5 @@
+"use strict";
+
 const path = require("path");
 const http = require("http");
 const express = require("express");
@@ -28,9 +30,13 @@ class Player extends geometry.Circle {
   }
 }
 
-class Virus extends geometry.Circle {
+class Food extends geometry.Circle {
   constructor(xPos, yPos, radius, color) {
     super(xPos, yPos, radius, color);
+  }
+
+  get mass() {
+    return 1;
   }
 }
 
@@ -39,19 +45,11 @@ function generateRandomColor() {
 }
 
 let gameState = {
-  circles: new Map(),
+  mapEntities: new Map(),
 };
 
-function shouldEat(player1, player2) {
-  if (player1.mass > player2.mass * eatThreshold) {
-    console.log("YES")
-    return 1;
-  } else if (player2.mass > player1.mass * eatThreshold) {
-    console.log("YES")
-    return -1;
-  } else {
-    return 0;
-  }
+function canEat(player, other) {
+  return other instanceof Food || player.mass > other.mass * eatThreshold;
 }
 
 function checkCollisions(circles) {
@@ -62,16 +60,23 @@ function checkCollisions(circles) {
     circles.forEach((circle2) => {
       if (circle1.id === circle2.id) {
         return;
-      } else if (collisions.get(circle1.id) !== undefined) {
-        if (collisions.get(circle1.id).otherPlayer === circle2.id) {
-          return;
-        }
+      } else if (
+        collisions.get(circle1.id) !== undefined ||
+        collisions.get(circle2.id) !== undefined
+      ) {
+        return;
       }
 
       if (geometry.circlesOverlap(circle1, circle2)) {
+        if (canEat(circle1, circle2)) {
+          collisions.set(circle1.id, circle2.id);
+        } else if (canEat(circle2, circle1)) {
+          collisions.set(circle2.id, circle1.id);
+        }
+        /*
         let eatOther = false;
         let beEaten = false;
-        switch (shouldEat(circle1, circle2)) {
+        switch (canEat(circle1, circle2)) {
           case 1:
             eatOther = true;
             break;
@@ -86,6 +91,7 @@ function checkCollisions(circles) {
           eatOther: eatOther,
           beEaten: beEaten,
         });
+        */
       }
     });
   });
@@ -94,21 +100,14 @@ function checkCollisions(circles) {
 }
 
 function handleCollisions(collisions) {
-  collisions.forEach((collisionInfo, mainCircle) => {
-    const eatenIndex = null;
-    if (collisionInfo.eatOther) {
-      global.io.emit("player-eaten", collisionInfo.otherPlayer);
-      removeCircleByID(gameState.circles, collisionInfo.otherPlayer);
-    } else if (collisionInfo.beEaten) {
-      global.io.emit("player-eaten", mainCircle);
-      removeCircleByID(gameState.circles, mainCircle);
-    }
-    //global.io.emit("player-eaten", {})
+  collisions.forEach((consumedEntityID) => {
+    removeCircleByID(gameState.mapEntities, consumedEntityID);
+    global.io.emit("player-eaten", consumedEntityID);
   });
 }
 
 function removeCircleByID(circles, circleToRemoveID) {
-  circles.delete(circles.get(circleToRemoveID));
+  circles.delete(circleToRemoveID);
 }
 
 function removeCircle(circles, circleToRemove) {
@@ -116,10 +115,10 @@ function removeCircle(circles, circleToRemove) {
 }
 
 function updateGameState(gameState, newCircle) {
-  gameState.circles.set(newCircle.id, newCircle);
+  gameState.mapEntities.set(newCircle.id, newCircle);
 }
 
-let gMass = 10;
+function generateRandomFood() {}
 
 io.on("connection", (socket) => {
   /*const type = socket.handshake.query.type;
@@ -131,16 +130,14 @@ io.on("connection", (socket) => {
     2000,
     2000,
     10,
-    generateRandomColor(),
-    (mass = gMass)
+    generateRandomColor()
   );
-  gMass *= 2;
 
   updateGameState(gameState, playerCircle);
 
   socket.emit("welcome", {
     playerCircle: JSON.stringify(playerCircle),
-    circles: JSON.stringify(Array.from(gameState.circles)),
+    circles: JSON.stringify(Array.from(gameState.mapEntities)),
   });
 
   socket.broadcast.emit("another-player-connected", {
@@ -153,20 +150,19 @@ io.on("connection", (socket) => {
 
   socket.on("tick", (data) => {
     //JSON.parse(data.circle)
+    const food = generateRandomFood();
     updateGameState(gameState, data.circle);
     //checkCollisions(gameState.circles);
-    handleCollisions(checkCollisions(gameState.circles));
+    handleCollisions(checkCollisions(gameState.mapEntities));
     socket.broadcast.emit(
       "state-updated",
-      JSON.stringify(Array.from(gameState.circles))
+      JSON.stringify(Array.from(gameState.mapEntities))
     );
   });
 
   socket.on("disconnect", () => {
-    removeCircle(gameState.circles, playerCircle);
-    socket.broadcast.emit("another-player-disconnected", {
-      circle: playerCircle,
-    });
+    removeCircle(gameState.mapEntities, playerCircle);
+    socket.broadcast.emit("another-player-disconnected", playerCircle.id);
   });
 
   /*socket.on("player-moved", (data) => {

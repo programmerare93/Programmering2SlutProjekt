@@ -12,7 +12,7 @@ const movementThreshold = 1;
 
 const mapSize = { width: 14142, height: 14142 }; // Samma storlek som i agario
 
-let playerId = undefined;
+let globalPlayerID = undefined;
 
 function drawGrid(player, canvasContext) {
   // TODO: Magisk nummer från 720/10
@@ -58,7 +58,7 @@ function drawGame(circles, canvasContext) {
 
   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
 
-  const player = circles.get(playerId);
+  const player = circles.get(globalPlayerID);
   drawGrid(player, canvasContext);
   drawCircles(player, circles, canvasContext);
 }
@@ -100,7 +100,7 @@ function removeCircle(circles, circleToRemove) {
 }
 
 function removeCircleByID(circles, circleToRemoveID) {
-  removeCircle(circles, circles.get(circleToRemoveID));
+  circles.delete(circleToRemoveID);
 }
 
 function addCircles(circles, newCircles) {
@@ -122,7 +122,7 @@ class Circle {
 socket.on("welcome", (data) => {
   let playerCircle = JSON.parse(data.playerCircle);
   playerCircle.id = playerCircle.id;
-  playerId = playerCircle.id;
+  globalPlayerID = playerCircle.id;
   let circles = new Map(JSON.parse(data.circles));
 
   let mousePosition = new Vector2D(
@@ -174,9 +174,10 @@ socket.on("welcome", (data) => {
   socket.on("player-eaten", (playerID) => {
     console.log(playerID)
     removeCircleByID(circles, playerID);
-    if (playerID == playerId) {
+    if (playerID == globalPlayerID) {
       socket.disconnect();
-      window.close()
+      alert("You died");
+      //window.close()
     }
     drawGame(circles, canvasContext);
   })
@@ -192,8 +193,8 @@ socket.on("welcome", (data) => {
     drawGame(circles, canvasContext);
   });
 
-  socket.on("another-player-disconnected", (data) => {
-    removeCircle(circles, data.circle);
+  socket.on("another-player-disconnected", (playerID) => {
+    removeCircleByID(circles, playerID);
     drawGame(circles, canvasContext);
   });
 
