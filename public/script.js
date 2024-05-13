@@ -17,12 +17,12 @@ let playerId = undefined;
 function drawGrid(player, canvasContext) {
   // TODO: Magisk nummer från 720/10
   // TODO: Mer funktionellt, ingen loop
-  for (let x = -player.position.x; x < window.innerWidth; x += 72) {
+  for (let x = -player.x; x < window.innerWidth; x += 72) {
     canvasContext.moveTo(x, 0);
     canvasContext.lineTo(x, window.innerHeight);
   }
 
-  for (let y = -player.position.y; y < window.innerHeight; y += 72) {
+  for (let y = -player.y; y < window.innerHeight; y += 72) {
     canvasContext.moveTo(0, y);
     canvasContext.lineTo(window.innerWidth, y);
   }
@@ -33,16 +33,16 @@ function drawGrid(player, canvasContext) {
 
 function drawCircles(player, circles, canvasContext) {
   // TODO: Varför negativt
-  const cameraX = -player.position.x + canvas.width / 2;
-  const cameraY = -player.position.y + canvas.height / 2;
+  const cameraX = -player.x + canvas.width / 2;
+  const cameraY = -player.y + canvas.height / 2;
 
   canvasContext.translate(cameraX, cameraY);
   circles.forEach((circle) => {
     canvasContext.beginPath();
     canvasContext.fillStyle = circle.color;
     canvasContext.arc(
-      circle.position.x,
-      circle.position.y,
+      circle.x,
+      circle.y,
       circle.radius,
       0,
       2 * Math.PI
@@ -99,48 +99,31 @@ function removeCircle(circles, circleToRemove) {
   circles.delete(circleToRemove.id);
 }
 
+function removeCircleByID(circles, circleToRemoveID) {
+  removeCircle(circles, circles.get(circleToRemoveID));
+}
+
 function addCircles(circles, newCircles) {
   newCircles.forEach((circle) => {
     addCircle(circles, circle);
   });
 }
 
-class AABB {
-  constructor(minX, minY, maxX, maxY) {
-    this.minX = minX;
-    this.minY = minY;
-    this.maxX = maxX;
-    this.maxY = maxY;
-    this.height = maxY - minY;
-    this.width = maxX - minX;
-  }
-}
-
 class Circle {
   constructor(xPos, yPos, radius, color) {
     this.id = crypto.randomUUID();
-    this.position = new Vector2D(xPos, yPos);
+    this.x = xPos;
+    this.y = yPos;
     this.radius = radius;
     this.color = color;
-    this.AABB = this.updateBoundingBox();
-  }
-
-  updateBoundingBox() {
-    const minX = this.position.x - this.radius;
-    const minY = this.position.y - this.radius;
-    const maxX = this.position.x + this.radius;
-    const maxY = this.position.y + this.radius;
-
-    return new AABB(minX, minY, maxX, maxY);
   }
 }
 
 socket.on("welcome", (data) => {
-  console.log(data)
-  let playerCircle = new Circle(JSON.parse(data.playerCircle));
-  console.log(playerCircle)
-  let circles = new Map(JSON.parse(data.circles));
+  let playerCircle = JSON.parse(data.playerCircle);
+  playerCircle.id = playerCircle.id;
   playerId = playerCircle.id;
+  let circles = new Map(JSON.parse(data.circles));
 
   let mousePosition = new Vector2D(
     window.innerWidth/2,
@@ -167,8 +150,8 @@ socket.on("welcome", (data) => {
     }
 
     if (movementDirection != undefined) {
-      playerCircle.position.x += movementDirection.x * movementSpeed;
-      playerCircle.position.y += movementDirection.y * movementSpeed;
+      playerCircle.x += movementDirection.x * movementSpeed;
+      playerCircle.y += movementDirection.y * movementSpeed;
 
       //socket.emit("player-moved", { circle: playerCircle });
     }
@@ -184,7 +167,17 @@ socket.on("welcome", (data) => {
   });
 
   socket.on("state-updated", (newState) => {
-    addCircles(circles, newState.circles);
+    addCircles(circles, new Map(JSON.parse(newState)));
+    drawGame(circles, canvasContext);
+  })
+
+  socket.on("player-eaten", (playerID) => {
+    console.log(playerID)
+    removeCircleByID(circles, playerID);
+    if (playerID == playerId) {
+      socket.disconnect();
+      window.close()
+    }
     drawGame(circles, canvasContext);
   })
 
