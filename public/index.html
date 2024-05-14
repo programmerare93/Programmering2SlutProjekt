@@ -13,10 +13,23 @@
       height: 100%;
       margin: 0;
     }
+    #score
+    {
+      margin-bottom: 1px;
+      margin-left : 1px;
+      width: fit-content;
+      height: fit-content;
+      background-color: grey;
+      color: white;
+      position: fixed;
+      bottom: 0;
+      font-size: 20px;
+    }
   </style>
 </head>
 <body>
   <canvas id="GameArea"></canvas>
+  <div id="score">Score: </div>
   <script src="/socket.io/socket.io.js"></script>
   <script src="script.js"></script>
 </body>

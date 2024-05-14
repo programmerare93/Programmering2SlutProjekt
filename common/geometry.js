@@ -38,8 +38,8 @@ class Circle {
 
 function circlesOverlap(circle1, circle2) {
   return (
-    (circle1.x - circle2.x) ** 2 + (circle1.y - circle2.y) ** 2 <=
-    (circle1.radius / 2 + circle2.radius / 2) ** 2
+    Math.sqrt((circle2.x - circle1.x) ** 2 + (circle2.y - circle1.y) ** 2) <=
+    circle2.radius
   );
 }
 

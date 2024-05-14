@@ -16,6 +16,8 @@ const port = 5500;
 
 const eatThreshold = 1.25;
 const updateInterval = 33;
+// TODO: Egen fil "constants.js"
+const mapSize = { width: 14142 / 2, height: 14142 / 2 }; // Hälften av agar.io kartan
 
 app.use(express.static("public"));
 
@@ -24,15 +26,15 @@ server.listen(port, () => {
 });
 
 class Player extends geometry.Circle {
-  constructor(xPos, yPos, radius, color, mass = 10) {
+  constructor(xPos, yPos, color, mass = 10, radius = calculateRadius(mass)) {
     super(xPos, yPos, radius, color);
     this.mass = mass;
   }
 }
 
 class Food extends geometry.Circle {
-  constructor(xPos, yPos, radius, color) {
-    super(xPos, yPos, radius, color);
+  constructor(xPos, yPos) {
+    super(xPos, yPos, 10, generateRandomColor());
   }
 
   get mass() {
@@ -61,8 +63,8 @@ function checkCollisions(circles) {
       if (circle1.id === circle2.id) {
         return;
       } else if (
-        collisions.get(circle1.id) !== undefined ||
-        collisions.get(circle2.id) !== undefined
+        collisions.get(circle1.id) === circle2.id ||
+        collisions.get(circle2.id) === circle1.id
       ) {
         return;
       }
@@ -73,25 +75,6 @@ function checkCollisions(circles) {
         } else if (canEat(circle2, circle1)) {
           collisions.set(circle2.id, circle1.id);
         }
-        /*
-        let eatOther = false;
-        let beEaten = false;
-        switch (canEat(circle1, circle2)) {
-          case 1:
-            eatOther = true;
-            break;
-          case -1:
-            beEaten = true;
-            break;
-          default:
-            break;
-        }
-        collisions.set(circle2.id, {
-          otherPlayer: circle1.id,
-          eatOther: eatOther,
-          beEaten: beEaten,
-        });
-        */
       }
     });
   });
@@ -99,10 +82,27 @@ function checkCollisions(circles) {
   return collisions;
 }
 
+function calculateRadius(mass) {
+  return Math.sqrt(mass * 100); // Från agar.io
+}
+
 function handleCollisions(collisions) {
-  collisions.forEach((consumedEntityID) => {
+  collisions.forEach((consumedEntityID, playerID) => {
+    let player = gameState.mapEntities.get(playerID);
+    player.mass += gameState.mapEntities.get(consumedEntityID).mass;
+    player.radius = calculateRadius(player.mass);
+    //updateCircleByID(gameState.mapEntities, playerID);
     removeCircleByID(gameState.mapEntities, consumedEntityID);
-    global.io.emit("player-eaten", consumedEntityID);
+    global.io.emit("entity-eaten", {
+      consumedID: consumedEntityID,
+      consumer: player,
+    });
+    // TODO: Ta bort
+    for (let i = 0; i < 10; ++i) {
+      // Generera 10 för att karta är stor
+      const food = generateRandomFood();
+      gameState.mapEntities.set(food.id, food);
+    }
   });
 }
 
@@ -118,7 +118,18 @@ function updateGameState(gameState, newCircle) {
   gameState.mapEntities.set(newCircle.id, newCircle);
 }
 
-function generateRandomFood() {}
+function generateRandomFood() {
+  // TODO: Hantera kartans gräns t.ex om (x,y) = (0,0) så hamnar del av maten utanför
+  const xPos = Math.random() * mapSize.width;
+  const yPos = Math.random() * mapSize.height;
+
+  return new Food(xPos, yPos);
+}
+
+for (let i = 0; i < 200; ++i) {
+  const food = generateRandomFood();
+  gameState.mapEntities.set(food.id, food);
+}
 
 io.on("connection", (socket) => {
   /*const type = socket.handshake.query.type;
@@ -126,17 +137,12 @@ io.on("connection", (socket) => {
 
   }*/
 
-  const playerCircle = new Player(
-    2000,
-    2000,
-    10,
-    generateRandomColor()
-  );
+  const playerCircle = new Player(2000, 2000, generateRandomColor());
 
   updateGameState(gameState, playerCircle);
 
   socket.emit("welcome", {
-    playerCircle: JSON.stringify(playerCircle),
+    playerCircle: playerCircle,
     circles: JSON.stringify(Array.from(gameState.mapEntities)),
   });
 

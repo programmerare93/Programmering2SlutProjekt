@@ -7,10 +7,12 @@ canvas.height = window.innerHeight;
 
 const canvasContext = canvas.getContext("2d");
 
-const movementSpeed = 1.25;
-const movementThreshold = 1;
+const movementThreshold = 0.5;
 
-const mapSize = { width: 14142, height: 14142 }; // Samma storlek som i agario
+// TODO: Egen fil "constants.js"
+const mapSize = { width: 14142 / 2, height: 14142 / 2 }; // Hälften av agar.io kartan
+
+const scoreDiv = document.getElementById("score");
 
 let globalPlayerID = undefined;
 
@@ -40,13 +42,7 @@ function drawCircles(player, circles, canvasContext) {
   circles.forEach((circle) => {
     canvasContext.beginPath();
     canvasContext.fillStyle = circle.color;
-    canvasContext.arc(
-      circle.x,
-      circle.y,
-      circle.radius,
-      0,
-      2 * Math.PI
-    );
+    canvasContext.arc(circle.x, circle.y, circle.radius, 0, 2 * Math.PI);
     canvasContext.fill();
     canvasContext.stroke();
   });
@@ -91,6 +87,12 @@ class Vector2D {
   }
 }
 
+function updateScoreDiv(newScore) {
+  const scoreEndIndex = 7;
+  scoreDiv.textContent =
+    scoreDiv.textContent.substring(0, scoreEndIndex) + newScore;
+}
+
 function addCircle(circles, newCircle) {
   circles.set(newCircle.id, newCircle);
 }
@@ -109,25 +111,19 @@ function addCircles(circles, newCircles) {
   });
 }
 
-class Circle {
-  constructor(xPos, yPos, radius, color) {
-    this.id = crypto.randomUUID();
-    this.x = xPos;
-    this.y = yPos;
-    this.radius = radius;
-    this.color = color;
-  }
+function calculateMovementSpeed(mass) {
+  return (mass / (mass + 1.44)) * 4; // Från agar.io
 }
 
 socket.on("welcome", (data) => {
-  let playerCircle = JSON.parse(data.playerCircle);
+  let playerCircle = data.playerCircle;
   playerCircle.id = playerCircle.id;
   globalPlayerID = playerCircle.id;
   let circles = new Map(JSON.parse(data.circles));
 
   let mousePosition = new Vector2D(
-    window.innerWidth/2,
-    window.innerHeight/2
+    window.innerWidth / 2,
+    window.innerHeight / 2
   );
   let movementDirection = new Vector2D(0, 0);
 
@@ -137,7 +133,7 @@ socket.on("welcome", (data) => {
   };
 
   const gameLoop = () => {
-    //TODO: Varför window.inner* / 2
+    //TODO: Varför window.inner* / 2 (vi utgår från mitten av skärmed för där är alltid karaktären)
     const deltaX = mousePosition.x - window.innerWidth / 2;
     const deltaY = mousePosition.y - window.innerHeight / 2;
     if (
@@ -150,8 +146,10 @@ socket.on("welcome", (data) => {
     }
 
     if (movementDirection != undefined) {
-      playerCircle.x += movementDirection.x * movementSpeed;
-      playerCircle.y += movementDirection.y * movementSpeed;
+      playerCircle.x +=
+        movementDirection.x * calculateMovementSpeed(playerCircle.mass);
+      playerCircle.y +=
+        movementDirection.y * calculateMovementSpeed(playerCircle.mass);
 
       //socket.emit("player-moved", { circle: playerCircle });
     }
@@ -169,24 +167,22 @@ socket.on("welcome", (data) => {
   socket.on("state-updated", (newState) => {
     addCircles(circles, new Map(JSON.parse(newState)));
     drawGame(circles, canvasContext);
-  })
+  });
 
-  socket.on("player-eaten", (playerID) => {
-    console.log(playerID)
-    removeCircleByID(circles, playerID);
-    if (playerID == globalPlayerID) {
-      socket.disconnect();
+  socket.on("entity-eaten", (data) => {
+    let player = circles.get(data.consumer.id);
+    player.mass = data.consumer.mass;
+    player.radius = data.consumer.radius;
+
+    if (data.consumedID === globalPlayerID) {
       alert("You died");
-      //window.close()
+    } else if (data.consumer.id === globalPlayerID) {
+      updateScoreDiv(playerCircle.mass);
     }
-    drawGame(circles, canvasContext);
-  })
 
-  // TODO: Flytta all socket setup till egen funktion/helper
-  /*socket.on("another-player-moved", (data) => {
-    addCircle(circles, data.circle);
+    removeCircleByID(circles, data.consumedID);
     drawGame(circles, canvasContext);
-  });*/
+  });
 
   socket.on("another-player-connected", (data) => {
     addCircle(circles, data.newCircle);
@@ -198,6 +194,7 @@ socket.on("welcome", (data) => {
     drawGame(circles, canvasContext);
   });
 
+  updateScoreDiv(playerCircle.mass);
   drawGame(circles, canvasContext);
   window.requestAnimationFrame(gameLoop);
 });
