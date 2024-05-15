@@ -83,12 +83,13 @@ function checkCollisions(circles) {
 }
 
 function calculateRadius(mass) {
-  return Math.sqrt(mass * 100); // Från agar.io
+  return 4 + Math.sqrt(mass) * 6; // Från agar.io
 }
 
 function handleCollisions(collisions) {
   collisions.forEach((consumedEntityID, playerID) => {
     let player = gameState.mapEntities.get(playerID);
+    // TODO: det finns något fel här där massan inte uppdateras ibland
     player.mass += gameState.mapEntities.get(consumedEntityID).mass;
     player.radius = calculateRadius(player.mass);
     //updateCircleByID(gameState.mapEntities, playerID);
@@ -137,26 +138,26 @@ io.on("connection", (socket) => {
 
   }*/
 
-  const playerCircle = new Player(2000, 2000, generateRandomColor());
-
-  updateGameState(gameState, playerCircle);
-
-  socket.emit("welcome", {
-    playerCircle: playerCircle,
-    circles: JSON.stringify(Array.from(gameState.mapEntities)),
-  });
-
-  socket.broadcast.emit("another-player-connected", {
-    newCircle: playerCircle,
+  socket.on("player-joined", () => {
+    const playerCircle = new Player(2000, 2000, generateRandomColor());
+    updateGameState(gameState, playerCircle);
+    socket.emit("welcome", {
+      playerCircle: playerCircle,
+      circles: JSON.stringify(Array.from(gameState.mapEntities)),
+    });
+  
+    socket.broadcast.emit("another-player-connected", {
+      newCircle: playerCircle,
+    });
   });
 
   setInterval(() => {
-    socket.emit("send-tick");
+    socket.emit("send-tick", JSON.stringify(Array.from(gameState.mapEntities)));
   }, updateInterval); // TODO: Magiskt nummer
 
   socket.on("tick", (data) => {
     //JSON.parse(data.circle)
-    const food = generateRandomFood();
+    //const food = generateRandomFood();
     updateGameState(gameState, data.circle);
     //checkCollisions(gameState.circles);
     handleCollisions(checkCollisions(gameState.mapEntities));
@@ -166,6 +167,7 @@ io.on("connection", (socket) => {
     );
   });
 
+  // TODO: FLytta från disconnect
   socket.on("disconnect", () => {
     removeCircle(gameState.mapEntities, playerCircle);
     socket.broadcast.emit("another-player-disconnected", playerCircle.id);

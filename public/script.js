@@ -1,11 +1,18 @@
 "use strict";
 
+const db = require("../services/db");
+
 const socket = io();
-let canvas = document.getElementById("GameArea");
+
+const startMenu = document.getElementById("startMenuDiv");
+const startButton = document.getElementById("startButton");
+
+const gameArea = document.getElementById("gameAreaDiv");
+const canvas = document.getElementById("gameArea");
+const canvasContext = canvas.getContext("2d");
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
-
-const canvasContext = canvas.getContext("2d");
 
 const movementThreshold = 0.5;
 
@@ -15,6 +22,31 @@ const mapSize = { width: 14142 / 2, height: 14142 / 2 }; // Hälften av agar.io 
 const scoreDiv = document.getElementById("score");
 
 let globalPlayerID = undefined;
+
+function login(event) {
+  event.preventDefault();
+
+  const usernameInput = document.getElementById("username");
+  const passwordInput = document.getElementById("password");
+
+  if (db.userExists(usernameInput, passwordInput)) {
+    console.log("YES");
+  } else {
+    console.log("NO");
+  }
+}
+document.getElementById("loginForm").addEventListener("submit", login);
+
+startButton.addEventListener("click", () => {
+  startMenu.style.display = "none";
+  gameArea.style.display = "inline";
+  socket.emit("player-joined");
+});
+
+function quitGame() {
+  startMenu.style.display = "inline";
+  gameArea.style.display = "none";
+}
 
 function drawGrid(player, canvasContext) {
   // TODO: Magisk nummer från 720/10
@@ -112,7 +144,18 @@ function addCircles(circles, newCircles) {
 }
 
 function calculateMovementSpeed(mass) {
-  return (mass / (mass + 1.44)) * 4; // Från agar.io
+  //return (mass / (mass + 1.44)) * 4; // Från agar.io
+  const maxSpeed = 3.0;
+  const minSpeed = 0.6;
+  const massDecayRate = 0.002;
+
+  let speed = maxSpeed - (maxSpeed - minSpeed) * (mass / 100.0);
+  speed *= 1.0 - massDecayRate;
+  if (speed < minSpeed) {
+    speed = minSpeed;
+  }
+
+  return speed;
 }
 
 socket.on("welcome", (data) => {
@@ -160,7 +203,11 @@ socket.on("welcome", (data) => {
     window.requestAnimationFrame(gameLoop);
   };
 
-  socket.on("send-tick", () => {
+  socket.on("send-tick", (mapEntities) => {
+    const state = new Map(JSON.parse(mapEntities));
+    state.forEach((circle) => {
+      addCircle(circles, circle);
+    });
     socket.emit("tick", { circle: playerCircle });
   });
 
@@ -171,13 +218,17 @@ socket.on("welcome", (data) => {
 
   socket.on("entity-eaten", (data) => {
     let player = circles.get(data.consumer.id);
-    player.mass = data.consumer.mass;
-    player.radius = data.consumer.radius;
+    player = data.consumer;
+    //player.mass = data.consumer.mass;
+    //xplayer.radius = data.consumer.radius;
 
     if (data.consumedID === globalPlayerID) {
       alert("You died");
+      quitGame();
     } else if (data.consumer.id === globalPlayerID) {
-      updateScoreDiv(playerCircle.mass);
+      console.log("Here");
+      console.log(data);
+      updateScoreDiv(player.mass);
     }
 
     removeCircleByID(circles, data.consumedID);
