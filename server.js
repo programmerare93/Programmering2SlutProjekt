@@ -1,75 +1,114 @@
 "use strict";
 
-const path = require("path");
-const http = require("http");
-const express = require("express");
-const socketIO = require("socket.io");
-
-const geometry = require("./common/geometry");
+import { createServer } from "http";
+import express from "express";
+import { Server } from "socket.io";
+import { Circle, circlesOverlap } from "./public/common/geometry.js";
+import {
+  generateRandomColor,
+  correctXPositon,
+  correctYPositon,
+} from "./public/common/helpers.js";
+import { mapSize } from "./public/common/constants.js";
+import {
+  getUserData,
+  userExists,
+  addUser,
+  updateUserScore,
+} from "./services/db.js";
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIO(server);
-global.io = io;
+const server = createServer(app);
+const io = new Server(server);
 
 const port = 5500;
 
 const eatThreshold = 1.25;
 const updateInterval = 33;
-// TODO: Egen fil "constants.js"
-const mapSize = { width: 14142 / 2, height: 14142 / 2 }; // Hälften av agar.io kartan
 
-app.use(express.static("public"));
-
-server.listen(port, () => {
-  console.log("Server öppnad på port " + port);
-});
-
-class Player extends geometry.Circle {
-  constructor(xPos, yPos, color, mass = 10, radius = calculateRadius(mass)) {
+class Player extends Circle {
+  constructor(xPos, yPos) {
+    const mass = 10;
+    const radius = calculateRadius(mass);
+    const color = generateRandomColor();
     super(xPos, yPos, radius, color);
     this.mass = mass;
   }
 }
 
-class Food extends geometry.Circle {
+class Food extends Circle {
   constructor(xPos, yPos) {
-    super(xPos, yPos, 10, generateRandomColor());
+    const radius = Food.radius;
+    const color = generateRandomColor();
+    super(xPos, yPos, radius, color);
   }
 
   get mass() {
     return 1;
   }
-}
 
-function generateRandomColor() {
-  return "#" + Math.floor(Math.random() * 16777215).toString(16);
+  static get radius() {
+    return 10;
+  }
 }
 
 let gameState = {
   mapEntities: new Map(),
+  playerIDs: new Map(),
+  leaderboard: new Map(),
 };
 
-function canEat(player, other) {
-  return other instanceof Food || player.mass > other.mass * eatThreshold;
+function canEat(eater, other) {
+  if (eater instanceof Food && other instanceof Food) {
+    return false;
+  } else {
+    return other instanceof Food || eater.mass > other.mass * eatThreshold;
+  }
+}
+
+function removeEntityByID(state, entityID) {
+  state.delete(entityID);
+}
+
+function removePlayerBySocketID(state, socketID) {
+  state.mapEntities.delete(state.playerIDs.get(socketID));
+}
+
+function updateGameState(state, socketID, newEntity) {
+  state.playerIDs.set(socketID, newEntity.id);
+  state.mapEntities.set(newEntity.id, newEntity);
+}
+
+function updatePlayerPosition(state, socketID, playerPosition) {
+  let player = state.mapEntities.get(state.playerIDs.get(socketID));
+  player.x = playerPosition.xPos;
+  player.y = playerPosition.yPos;
+}
+
+function updateGameStateByEntity(state, newEntityValue) {
+  state.mapEntities.set(newEntityValue.id, newEntityValue);
 }
 
 function checkCollisions(circles) {
   // TODO: Mer funktionellt
-  let collisions = new Map();
+  let collisions = new Map(); // Key: Den som äter, Value: Den som blir uppäten
+
+  const collisionChecked = (circle1, circle2) => {
+    return (
+      collisions.get(circle1.id) === circle2.id ||
+      collisions.get(circle2.id) === circle1.id
+    );
+  };
 
   circles.forEach((circle1) => {
     circles.forEach((circle2) => {
       if (circle1.id === circle2.id) {
         return;
-      } else if (
-        collisions.get(circle1.id) === circle2.id ||
-        collisions.get(circle2.id) === circle1.id
-      ) {
+      } else if (collisionChecked(circle1, circle2)) {
         return;
       }
 
-      if (geometry.circlesOverlap(circle1, circle2)) {
+      if (circlesOverlap(circle1, circle2)) {
         if (canEat(circle1, circle2)) {
           collisions.set(circle1.id, circle2.id);
         } else if (canEat(circle2, circle1)) {
@@ -89,16 +128,17 @@ function calculateRadius(mass) {
 function handleCollisions(collisions) {
   collisions.forEach((consumedEntityID, playerID) => {
     let player = gameState.mapEntities.get(playerID);
-    // TODO: det finns något fel här där massan inte uppdateras ibland
     player.mass += gameState.mapEntities.get(consumedEntityID).mass;
     player.radius = calculateRadius(player.mass);
-    //updateCircleByID(gameState.mapEntities, playerID);
-    removeCircleByID(gameState.mapEntities, consumedEntityID);
-    global.io.emit("entity-eaten", {
-      consumedID: consumedEntityID,
+
+    removeEntityByID(gameState.mapEntities, consumedEntityID);
+
+    io.emit("entity-eaten", {
+      consumedEntityID: consumedEntityID,
       consumer: player,
     });
-    // TODO: Ta bort
+
+    // TODO: Flytta
     for (let i = 0; i < 10; ++i) {
       // Generera 10 för att karta är stor
       const food = generateRandomFood();
@@ -107,59 +147,122 @@ function handleCollisions(collisions) {
   });
 }
 
-function removeCircleByID(circles, circleToRemoveID) {
-  circles.delete(circleToRemoveID);
-}
-
-function removeCircle(circles, circleToRemove) {
-  circles.delete(circleToRemove.id);
-}
-
-function updateGameState(gameState, newCircle) {
-  gameState.mapEntities.set(newCircle.id, newCircle);
-}
-
 function generateRandomFood() {
-  // TODO: Hantera kartans gräns t.ex om (x,y) = (0,0) så hamnar del av maten utanför
-  const xPos = Math.random() * mapSize.width;
-  const yPos = Math.random() * mapSize.height;
+  const xPos = correctXPositon(
+    Math.random() * mapSize.width,
+    Food.radius,
+    mapSize.width
+  );
+  const yPos = correctYPositon(
+    Math.random() * mapSize.height,
+    Food.radius,
+    mapSize.height
+  );
 
   return new Food(xPos, yPos);
 }
 
-for (let i = 0; i < 200; ++i) {
-  const food = generateRandomFood();
-  gameState.mapEntities.set(food.id, food);
+function initializeGame() {
+  for (let i = 0; i < 200; ++i) {
+    const food = generateRandomFood();
+    gameState.mapEntities.set(food.id, food);
+  }
 }
 
-io.on("connection", (socket) => {
-  /*const type = socket.handshake.query.type;
-  switch (type) {
+app.use(express.static("public"));
 
-  }*/
+server.listen(port, () => {
+  initializeGame();
+  console.log("Server öppnad på port " + port);
+});
+
+io.on("connection", (socket) => {
+  const disconnectPlayer = () => {
+    if (gameState.playerIDs.get(socket.id) !== undefined) {
+      const currentScore = gameState.mapEntities.get(
+        gameState.playerIDs.get(socket.id)
+      ).mass;
+      const topScore = gameState.leaderboard.get(socket.id).score;
+      if (currentScore > topScore) {
+        updateLeaderboard(currentScore, socket.id);
+      }
+    }
+
+    removePlayerBySocketID(gameState, socket.id);
+    socket.broadcast.emit(
+      "another-player-disconnected",
+      gameState.playerIDs.get(socket.id)
+    );
+  };
+
+  const updateLeaderboard = (newScore, socketID) => {
+    const playerInfo = gameState.leaderboard.get(socketID);
+    updateUserScore(playerInfo.username, playerInfo.password, newScore);
+    socket.emit("login-success", {
+      username: playerInfo.username,
+      score: newScore,
+    });
+  };
+
+  let tickIntervalID = null;
 
   socket.on("player-joined", () => {
-    const playerCircle = new Player(2000, 2000, generateRandomColor());
-    updateGameState(gameState, playerCircle);
+    const player = new Player(2000, 2000);
+    updateGameState(gameState, socket.id, player);
     socket.emit("welcome", {
-      playerCircle: playerCircle,
-      circles: JSON.stringify(Array.from(gameState.mapEntities)),
+      player: player,
+      mapEntites: JSON.stringify(Array.from(gameState.mapEntities)),
     });
-  
+
     socket.broadcast.emit("another-player-connected", {
-      newCircle: playerCircle,
+      newPlayer: player,
+    });
+
+    tickIntervalID = setInterval(() => {
+      socket.emit(
+        "send-tick",
+        JSON.stringify(Array.from(gameState.mapEntities))
+      );
+    }, updateInterval);
+  });
+
+  socket.on("login", async (info) => {
+    if (await userExists(info.username, info.password)) {
+      const userData = await getUserData(info.username, info.password);
+      gameState.leaderboard.set(socket.id, {
+        username: userData.name,
+        password: info.password,
+        score: userData.score,
+      });
+      socket.emit("login-success", {
+        username: userData.name,
+        score: userData.score,
+      });
+    } else {
+      socket.emit("login-failed", "Wrong username or password");
+    }
+  });
+
+  socket.on("add-user", async (info) => {
+    const result = await addUser(info.username, info.password);
+    if (result === "ER_DUP_ENTRY") {
+      socket.emit("login-failed", "User already exists");
+      return;
+    }
+
+    gameState.leaderboard.set(socket.id, {
+      username: info.username,
+      password: info.password,
+      score: 0,
+    });
+    socket.emit("login-success", {
+      username: info.username,
+      score: 0,
     });
   });
 
-  setInterval(() => {
-    socket.emit("send-tick", JSON.stringify(Array.from(gameState.mapEntities)));
-  }, updateInterval); // TODO: Magiskt nummer
-
-  socket.on("tick", (data) => {
-    //JSON.parse(data.circle)
-    //const food = generateRandomFood();
-    updateGameState(gameState, data.circle);
-    //checkCollisions(gameState.circles);
+  socket.on("tick", (playerPosition) => {
+    updatePlayerPosition(gameState, socket.id, playerPosition);
     handleCollisions(checkCollisions(gameState.mapEntities));
     socket.broadcast.emit(
       "state-updated",
@@ -167,15 +270,16 @@ io.on("connection", (socket) => {
     );
   });
 
-  // TODO: FLytta från disconnect
-  socket.on("disconnect", () => {
-    removeCircle(gameState.mapEntities, playerCircle);
-    socket.broadcast.emit("another-player-disconnected", playerCircle.id);
+  socket.on("player-left", () => {
+    disconnectPlayer();
+
+    clearInterval(tickIntervalID);
+    tickIntervalID = null;
   });
 
-  /*socket.on("player-moved", (data) => {
-    updateGameState(gameState, data.circle);
-    checkCollisions(gameState.circles);
-    socket.broadcast.emit("another-player-moved", data);
-  });*/
+  socket.on("disconnect", () => {
+    if (tickIntervalID !== null) {
+      disconnectPlayer();
+    }
+  });
 });

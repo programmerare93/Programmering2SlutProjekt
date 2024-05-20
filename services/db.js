@@ -1,7 +1,9 @@
 // Detta är en modul som samlar all databaskommunikation.
 
 //Paketet mysql är installerat med "npm install mysql2"
-const mysql = require("mysql2/promise"); // "mysql2/promise" gör att vi kan använda async/await istället för callbacks.
+//const mysql = require("mysql2/promise"); // "mysql2/promise" gör att vi kan använda async/await istället för callbacks.
+//import { createConnection } from "mysql2";
+import mysql from "mysql2/promise";
 
 const tableName = "leaderboard";
 
@@ -18,37 +20,46 @@ async function getConnection() {
 //const connection = await getConnection();
 
 // Den här funktionen ska göra ett anrop till databasen för att hämta alla users.
-async function getUserData(name, password) {
+export async function getUserData(name, password) {
   console.log("Hämtar användare i modul...");
 
   const connection = await getConnection();
-  const result = await connection.execute(`SELECT * FROM ${tableName} where name = '${name}' AND password = '${password}'`);
-  console.log(result)
+  const result = await connection.execute(
+    `SELECT * FROM ${tableName} where name = '${name}' AND password = '${password}'`
+  );
+  console.log(result);
 
   //console.log("resultatet från databasen", result)
 
   await connection.end(); //Stänger kopplingen till databasen.
-  return result[0]; //Plats 0 innehåller alla rader som returnerats från databasen.
+  return result[0][0]; //Plats 0 innehåller alla rader som returnerats från databasen.
 }
 
-async function userExists(name, password) {
+export async function userExists(name, password) {
   const connection = await getConnection();
-  const result = await connection.execute(`SELECT * FROM ${tableName} where name = '${name}' AND password = '${password}'`);
+  const result = await connection.execute(
+    `SELECT * FROM ${tableName} where name = '${name}' AND password = '${password}'`
+  );
 
   await connection.end(); //Stänger kopplingen till databasen.
   return result[0].length !== 0;
 }
 
-async function addUser(name, password, score) {
+export async function addUser(name, password) {
   const connection = await getConnection();
-  const result = await connection.query(
-    `INSERT ${tableName} (name, password, score) VALUES ('${name}', '${password}', '${score}')`
-  );
-  await connection.end();
-  return result[0];
+  try {
+    const result = await connection.query(
+      `INSERT ${tableName} (name, password, score) VALUES ('${name}', '${password}', '0')`
+    );
+    return result[0];
+  } catch (error) {
+    return error.code;
+  } finally {
+    await connection.end();
+  }
 }
 
-async function updateUserScore(name, password, newScore) {
+export async function updateUserScore(name, password, newScore) {
   const connection = await getConnection();
   const result = await connection.query(
     `UPDATE ${tableName} set (name, password, score) VALUES ('${name}', '${password}', '${score}')`
@@ -60,8 +71,8 @@ async function updateUserScore(name, password, newScore) {
 //getUserData("lolster6", "lol123");
 
 // Detta exporterar delar av modulen så att andra filer kan komma åt dem med require.
-module.exports = {
+/*module.exports = {
   userExists,
   getUserData,
   addUser,
-};
+};*/

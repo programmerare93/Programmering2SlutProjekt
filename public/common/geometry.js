@@ -1,4 +1,4 @@
-class Vector2D {
+export class Vector2D {
   constructor(x, y) {
     this.x = x;
     this.y = y;
@@ -26,7 +26,7 @@ class Vector2D {
   }
 }
 
-class Circle {
+export class Circle {
   constructor(xPos, yPos, radius, color) {
     this.id = crypto.randomUUID();
     this.x = xPos;
@@ -36,11 +36,11 @@ class Circle {
   }
 }
 
-function circlesOverlap(circle1, circle2) {
+export function circlesOverlap(circle1, circle2) {
   return (
     Math.sqrt((circle2.x - circle1.x) ** 2 + (circle2.y - circle1.y) ** 2) <=
     circle2.radius
   );
 }
 
-module.exports = { Vector2D, Circle, circlesOverlap };
+//module.exports = { Vector2D, Circle, circlesOverlap };

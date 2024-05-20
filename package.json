@@ -4,5 +4,5 @@
     "mysql2": "^3.9.7",
     "socket.io": "^4.7.4"
   },
-  "type": "commonjs"
+  "type": "module"
 }
